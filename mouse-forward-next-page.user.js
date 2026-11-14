@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.1.3
+// @version      1.1.4
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -156,12 +156,10 @@
       if (isDisabled(el)) { sawDisabled = true; continue; }
       if (el.tagName === 'LINK') { location.href = el.href; }
       else {
-        // 強制在同一個分頁開啟,避免被 AdGuard 之類的彈出視窗阻擋器攔下
-        if (el.tagName === 'A') {
-          el.target = '_self';
-          el.removeAttribute('rel');
-        }
-        el.click();
+        // 一般連結直接用 location 導向:腳本觸發的 el.click() 會被 AdGuard 之類的
+        // 彈出視窗阻擋器當成彈窗攔下
+        if (el.tagName === 'A' && isUsable(el)) location.href = el.href;
+        else el.click();
       }
       return true;
     }
