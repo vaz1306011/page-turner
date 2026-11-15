@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.1.4
+// @version      1.1.5
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -136,8 +136,11 @@
       if (u.origin !== cur.origin || u.pathname !== cur.pathname) continue;
       const k = key || PAGE_KEYS.find(x => u.searchParams.has(x));
       if (!k) continue;
+      const n = parseInt(u.searchParams.get(k), 10);
+      // 頁碼等於目前頁的連結(例如卡片連結 ?page=6#)不算分頁連結
+      if (isNaN(n) || n === curNum) continue;
       paginationSeen = true; // 頁面上有分頁連結
-      if (parseInt(u.searchParams.get(k), 10) === curNum + 1) return a;
+      if (n === curNum + 1) return a;
     }
     return null;
   }
