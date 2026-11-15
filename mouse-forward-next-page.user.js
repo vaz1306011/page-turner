@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.1.5
+// @version      1.1.6
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -79,6 +79,21 @@
     return null;
   }
 
+  // 純按鈕式分頁(SPA,例如 BepisDB):目前頁按鈕(.active / aria-current)的下一個數字按鈕。
+  // 直接點它只會換內容,比整頁重新載入快
+  function findNextByActiveButton() {
+    for (const cur of document.querySelectorAll('button.active, button[aria-current], button[aria-pressed="true"]')) {
+      const curNum = parseInt(cur.textContent.trim(), 10);
+      if (isNaN(curNum) || !/^\d+$/.test(cur.textContent.trim())) continue;
+      // 同一排至少要有 3 個數字按鈕,避免誤抓到一般的切換按鈕
+      const nums = [...cur.parentElement.children].filter(b => /^\d+$/.test(b.textContent.trim()));
+      if (nums.length < 3) continue;
+      const next = nums.find(b => parseInt(b.textContent.trim(), 10) === curNum + 1);
+      if (next) return next;
+    }
+    return null;
+  }
+
   // 由網址推算:?page=N / &p=N / /page/N / 結尾數字
   function guessNextUrl() {
     const url = new URL(location.href);
@@ -149,7 +164,7 @@
   let paginationSeen = false;
   function goNext() {
     paginationSeen = false;
-    const finders = [findNextByRel, findNextByPageParam, findNextByClass, findNextByText, findNextByCurrent];
+    const finders = [findNextByRel, findNextByPageParam, findNextByClass, findNextByText, findNextByCurrent, findNextByActiveButton];
     let sawDisabled = false;
     for (const find of finders) {
       const el = find();
