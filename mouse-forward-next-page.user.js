@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.2.1
+// @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -219,6 +219,8 @@
       s.type = 'speculationrules';
       s.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url] }] });
       document.head.appendChild(s);
+      // 預先渲染時,靠捲動才載入的懶載入圖片不會被載入,所以同站再額外預載圖片
+      preloadWithImages(url);
     } else if (sameSite) {
       // 不支援預先渲染(例如 Firefox):自己抓 HTML,並把裡面的圖片一併預載
       preloadWithImages(url);
