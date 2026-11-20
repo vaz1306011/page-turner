@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.2.0
+// @version      1.2.1
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -219,12 +219,33 @@
       s.type = 'speculationrules';
       s.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url] }] });
       document.head.appendChild(s);
+    } else if (sameSite) {
+      // 不支援預先渲染(例如 Firefox):自己抓 HTML,並把裡面的圖片一併預載
+      preloadWithImages(url);
     } else {
       const l = document.createElement('link');
       l.rel = 'prefetch';
       l.href = url;
       document.head.appendChild(l);
     }
+  }
+
+  async function preloadWithImages(url) {
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return;
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const srcs = new Set();
+      for (const img of doc.querySelectorAll('img')) {
+        // 懶載入的圖片常把真正網址放在 data-src 之類的屬性
+        const raw = img.getAttribute('data-src') || img.getAttribute('data-original') ||
+                    img.getAttribute('data-lazy-src') || img.getAttribute('src');
+        if (!raw || raw.startsWith('data:')) continue;
+        try { srcs.add(new URL(raw, url).href); } catch (e) {}
+        if (srcs.size >= 30) break;
+      }
+      for (const src of srcs) new Image().src = src;
+    } catch (e) {}
   }
 
   function schedulePrefetch() {
