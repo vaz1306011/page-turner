@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -250,15 +250,41 @@
     } catch (e) {}
   }
 
-  function schedulePrefetch() {
+  // 前端路由的網站(例如 pixiv)換頁不會觸發 load,分頁列也常是晚點才渲染,
+  // 所以每次網址改變(或載入完成)後,在 10 秒內監看頁面變動,找到下一頁就預載
+  let watchTimer = 0;
+  let watchObserver = null;
+  function watchForNext() {
+    if (watchObserver) watchObserver.disconnect();
+    clearTimeout(watchTimer);
+    let timer = 0;
     const run = () => { try { prefetchNext(); } catch (e) {} };
-    const idle = window.requestIdleCallback || (f => setTimeout(f, 300));
-    // 頁面剛載入時先試一次,延後再試一次以涵蓋晚點才渲染的分頁列
-    idle(run);
-    setTimeout(run, 2000);
+    run();
+    if (!document.documentElement) return;
+    watchObserver = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(run, 500);
+    });
+    watchObserver.observe(document.documentElement, { childList: true, subtree: true });
+    watchTimer = setTimeout(() => { watchObserver.disconnect(); clearTimeout(timer); }, 10000);
   }
-  if (document.readyState === 'complete') schedulePrefetch();
-  else window.addEventListener('load', schedulePrefetch, { once: true });
+
+  function onUrlChange() {
+    prefetched = '';
+    watchForNext();
+  }
+  for (const m of ['pushState', 'replaceState']) {
+    const orig = history[m];
+    history[m] = function () {
+      const before = location.href;
+      const ret = orig.apply(this, arguments);
+      if (location.href !== before) setTimeout(onUrlChange, 300);
+      return ret;
+    };
+  }
+  window.addEventListener('popstate', () => setTimeout(onUrlChange, 300));
+  if (document.readyState === 'complete') watchForNext();
+  else window.addEventListener('load', watchForNext, { once: true });
 
   // ---------- 事件 ----------
   function isEditing(e) {
