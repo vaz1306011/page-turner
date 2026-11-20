@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.1.6
+// @version      1.2.0
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -162,16 +162,26 @@
 
   // 回傳:true = 已觸發翻頁;false = 已是最後一頁/找不到;Promise = 非同步驗證網址猜測
   let paginationSeen = false;
-  function goNext() {
+  // 找出下一頁元素;回傳 { el, last }:last = true 表示已確定是最後一頁
+  function findNextEl() {
     paginationSeen = false;
     const finders = [findNextByRel, findNextByPageParam, findNextByClass, findNextByText, findNextByCurrent, findNextByActiveButton];
     let sawDisabled = false;
     for (const find of finders) {
       const el = find();
       // 頁面有頁碼連結,卻沒有「目前頁 + 1」 → 已是最後一頁,不再用其他方式猜
-      if (!el && find === findNextByPageParam && paginationSeen) return false;
+      if (!el && find === findNextByPageParam && paginationSeen) return { el: null, last: true };
       if (!el) continue;
       if (isDisabled(el)) { sawDisabled = true; continue; }
+      return { el, last: false };
+    }
+    // 下一頁按鈕被停用,或頁面有分頁但沒有更後面的頁碼 → 已是最後一頁
+    return { el: null, last: sawDisabled || paginationSeen };
+  }
+
+  function goNext() {
+    const { el, last } = findNextEl();
+    if (el) {
       if (el.tagName === 'LINK') { location.href = el.href; }
       else {
         // 一般連結直接用 location 導向:腳本觸發的 el.click() 會被 AdGuard 之類的
@@ -181,8 +191,7 @@
       }
       return true;
     }
-    // 下一頁按鈕被停用,或頁面有分頁但沒有更後面的頁碼 → 已是最後一頁
-    if (sawDisabled || paginationSeen) return false;
+    if (last) return false;
     const guess = guessNextUrl();
     if (!guess) return false;
     return guessExists(guess).then(ok => {
@@ -190,6 +199,43 @@
       return ok;
     });
   }
+
+  // ---------- 預先載入下一頁 ----------
+  // 同站用 Speculation Rules 預先渲染(按下後幾乎瞬間顯示),
+  // 不支援或跨站時退而求其次用 <link rel="prefetch"> 先抓 HTML
+  let prefetched = '';
+  function prefetchNext() {
+    const conn = navigator.connection;
+    if (conn && conn.saveData) return;
+    const { el } = findNextEl();
+    if (!el || !el.href || (el.tagName !== 'A' && el.tagName !== 'LINK')) return;
+    const url = el.href;
+    if (url === prefetched || url.split('#')[0] === location.href.split('#')[0]) return;
+    if (!/^https?:/.test(url)) return;
+    prefetched = url;
+    const sameSite = new URL(url).origin === location.origin;
+    if (sameSite && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
+      const s = document.createElement('script');
+      s.type = 'speculationrules';
+      s.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url] }] });
+      document.head.appendChild(s);
+    } else {
+      const l = document.createElement('link');
+      l.rel = 'prefetch';
+      l.href = url;
+      document.head.appendChild(l);
+    }
+  }
+
+  function schedulePrefetch() {
+    const run = () => { try { prefetchNext(); } catch (e) {} };
+    const idle = window.requestIdleCallback || (f => setTimeout(f, 300));
+    // 頁面剛載入時先試一次,延後再試一次以涵蓋晚點才渲染的分頁列
+    idle(run);
+    setTimeout(run, 2000);
+  }
+  if (document.readyState === 'complete') schedulePrefetch();
+  else window.addEventListener('load', schedulePrefetch, { once: true });
 
   // ---------- 事件 ----------
   function isEditing(e) {
