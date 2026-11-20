@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         滑鼠側鍵「下一頁」自動翻頁
+// @name         PageTurner 滑鼠側鍵自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.3.0
-// @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
-// @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
+// @version      1.3.1
+// @updateURL    https://raw.githubusercontent.com/vaz1306011/page-turner/main/page-turner.user.js
+// @downloadURL  https://raw.githubusercontent.com/vaz1306011/page-turner/main/page-turner.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
 // @match        *://*/*
 // @run-at       document-start
