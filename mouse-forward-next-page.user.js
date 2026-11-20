@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.2.4
+// @version      1.3.0
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -200,37 +200,80 @@
     });
   }
 
-  // ---------- 預先載入下一頁 ----------
+  // ---------- 預先載入後面幾頁 ----------
   // 同站用 Speculation Rules 預先渲染(按下後幾乎瞬間顯示),
   // 不支援或跨站時退而求其次用 <link rel="prefetch"> 先抓 HTML
-  let prefetched = '';
-  const prerendered = new Set(); // 已加入預先渲染的網址
+  const PRELOAD_AHEAD = 5; // 往後預載幾頁(往前的頁面用側鍵回上一頁時用不到,所以不預載)
+  let appliedKey = '';
+  let specScript = null;
+  const prerendered = new Set();   // 已加入預先渲染的網址
+  const imagePreloaded = new Set(); // 已預載過圖片的網址
+  const linkPrefetched = new Set(); // 已用 <link rel="prefetch"> 的網址
+
+  // 蒐集要預載的網址,依優先順序:下一頁、下兩頁…
+  function collectTargets() {
+    const here = location.href.split('#')[0];
+    const urls = [];
+    const add = u => {
+      if (!u || !/^https?:/.test(u)) return;
+      if (u.split('#')[0] === here || urls.includes(u)) return;
+      urls.push(u);
+    };
+    const { el } = findNextEl();
+    if (el && el.href && (el.tagName === 'A' || el.tagName === 'LINK')) add(el.href);
+
+    // 用頁碼參數找後面幾頁的連結
+    const cur = new URL(location.href);
+    const key = PAGE_KEYS.find(k => cur.searchParams.has(k));
+    const curNum = key ? parseInt(cur.searchParams.get(key), 10) : 1;
+    if (!isNaN(curNum)) {
+      const byNum = new Map();
+      for (const a of document.querySelectorAll('a[href]')) {
+        let u;
+        try { u = new URL(a.href, location.href); } catch (e) { continue; }
+        if (u.origin !== cur.origin || u.pathname !== cur.pathname) continue;
+        const k = key || PAGE_KEYS.find(x => u.searchParams.has(x));
+        if (!k) continue;
+        const n = parseInt(u.searchParams.get(k), 10);
+        if (!isNaN(n) && !byNum.has(n)) byNum.set(n, a.href);
+      }
+      for (let d = 1; d <= PRELOAD_AHEAD; d++) add(byNum.get(curNum + d));
+    }
+    return urls;
+  }
+
   function prefetchNext() {
     const conn = navigator.connection;
     if (conn && conn.saveData) return;
-    const { el } = findNextEl();
-    if (!el || !el.href || (el.tagName !== 'A' && el.tagName !== 'LINK')) return;
-    const url = el.href;
-    if (url === prefetched || url.split('#')[0] === location.href.split('#')[0]) return;
-    if (!/^https?:/.test(url)) return;
-    prefetched = url;
-    const sameSite = new URL(url).origin === location.origin;
-    if (sameSite && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
-      const s = document.createElement('script');
-      s.type = 'speculationrules';
-      s.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url] }] });
-      document.head.appendChild(s);
-      prerendered.add(url);
-      // 預先渲染時,靠捲動才載入的懶載入圖片不會被載入,所以同站再額外預載圖片
-      preloadWithImages(url);
-    } else if (sameSite) {
-      // 不支援預先渲染(例如 Firefox):自己抓 HTML,並把裡面的圖片一併預載
-      preloadWithImages(url);
-    } else {
-      const l = document.createElement('link');
-      l.rel = 'prefetch';
-      l.href = url;
-      document.head.appendChild(l);
+    const urls = collectTargets();
+    const key = urls.join('|');
+    if (!urls.length || key === appliedKey) return;
+    appliedKey = key;
+
+    const sameSite = urls.filter(u => new URL(u).origin === location.origin);
+    if (sameSite.length && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
+      // 換掉舊的規則,不再需要的頁面會被瀏覽器釋放
+      if (specScript) specScript.remove();
+      specScript = document.createElement('script');
+      specScript.type = 'speculationrules';
+      specScript.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: sameSite }] });
+      document.head.appendChild(specScript);
+    }
+    prerendered.clear();
+    const canPrerender = !!specScript && sameSite.length > 0;
+    for (const url of urls) {
+      if (sameSite.includes(url)) {
+        if (canPrerender) prerendered.add(url);
+        // 預先渲染時,靠捲動才載入的懶載入圖片不會被載入,所以同站再額外預載圖片
+        // (不支援預先渲染時,則是自己抓 HTML 並預載圖片)
+        if (!imagePreloaded.has(url)) { imagePreloaded.add(url); preloadWithImages(url); }
+      } else if (!linkPrefetched.has(url)) {
+        linkPrefetched.add(url);
+        const l = document.createElement('link');
+        l.rel = 'prefetch';
+        l.href = url;
+        document.head.appendChild(l);
+      }
     }
   }
 
@@ -272,7 +315,7 @@
   }
 
   function onUrlChange() {
-    prefetched = '';
+    appliedKey = '';
     watchForNext();
   }
   for (const m of ['pushState', 'replaceState']) {
