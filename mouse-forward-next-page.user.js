@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         滑鼠側鍵「下一頁」自動翻頁
 // @namespace    local.mouse-forward-next
-// @version      1.2.3
+// @version      1.2.4
 // @updateURL    https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @downloadURL  https://raw.githubusercontent.com/vaz1306011/mouse-forward-next/main/mouse-forward-next-page.user.js
 // @description  沒有可前進的歷史紀錄時,按滑鼠側鍵「下一頁」會自動跳到網頁的下一頁
@@ -204,6 +204,7 @@
   // 同站用 Speculation Rules 預先渲染(按下後幾乎瞬間顯示),
   // 不支援或跨站時退而求其次用 <link rel="prefetch"> 先抓 HTML
   let prefetched = '';
+  const prerendered = new Set(); // 已加入預先渲染的網址
   function prefetchNext() {
     const conn = navigator.connection;
     if (conn && conn.saveData) return;
@@ -219,6 +220,7 @@
       s.type = 'speculationrules';
       s.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url] }] });
       document.head.appendChild(s);
+      prerendered.add(url);
       // 預先渲染時,靠捲動才載入的懶載入圖片不會被載入,所以同站再額外預載圖片
       preloadWithImages(url);
     } else if (sameSite) {
@@ -285,6 +287,18 @@
   window.addEventListener('popstate', () => setTimeout(onUrlChange, 300));
   if (document.readyState === 'complete') watchForNext();
   else window.addEventListener('load', watchForNext, { once: true });
+
+  // 手動點下一頁連結時也套用加速:前端路由的網站(例如 pixiv)點連結只會站內切換,
+  // 用不到預先渲染好的頁面;改成整頁導向同一個網址,瀏覽器就會直接啟用預先渲染的頁面
+  document.addEventListener('click', e => {
+    if (e.button !== 0 || e.defaultPrevented || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+    if (!prerendered.has(a.href) || a.href === location.href) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    location.href = a.href;
+  }, true);
 
   // ---------- 事件 ----------
   function isEditing(e) {
